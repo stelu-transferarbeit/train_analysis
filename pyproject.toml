@@ -1,0 +1,16 @@
+[project]
+name = "train-analysis"
+version = "0.1.0"
+description = "Train popularity in Europe: what are the main factors?"
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [
+  { name = "Stéphane Bisinger", email = "stephane@sbisinger.ch" },
+  { name = "Luca Pellegrini", email = "luca9294@hotmail.it" }
+]
+dependencies = [
+  "jupyter>=1.1.1",
+  "jupyterlab>=4.5.8",
+  "pandas>=3.0.3",
+  "pandas-stubs>=3.0.3.260530",
+]
