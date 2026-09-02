@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 from cyclopts import App
+from linearmodels import PanelOLS, PooledOLS
 
 app = App()
 
@@ -142,9 +143,20 @@ def analyze():
     download()
     data = load_data()
     print("Proceeding with analysis")
-    for c, g in data.groupby("geo"):
+    for c, g in data.groupby("geo", dropna=False):
         print(f"Data for {c}")
         print(g.describe([], include=[pd.Float64Dtype()]))
+    print(data[["rail_passengers", "total_rail_length", "cars_capita"]])
+    print(data.set_index(["geo", "TIME_PERIOD"]).dropna())
+    print(data.dropna().dtypes)
+    res = PooledOLS.from_formula(
+        "rail_passengers ~ 1 + cars_capita",
+        data=data.rename({"TIME_PERIOD": "year"}, axis="columns")
+        .set_index(["geo", "year"])
+        .dropna(),
+    ).fit(cov_type="clustered", cluster_entity=True)
+    print(res)
+    print(res.params)
 
 
 app()
