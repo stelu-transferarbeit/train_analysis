@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 from cyclopts import App
+from sklearn.preprocessing import StandardScaler
 
 from train_analysis.analysis import (
     multi_regressor_entity_time_effects,
@@ -94,8 +95,6 @@ def transform_population(data: pd.DataFrame):
 
 
 def transform_rail_high_speed(data: pd.DataFrame):
-    print(data)
-    print(data["tra_infr"].unique())
     hsp_data = data[data["tra_infr"] == "Total"].merge(
         data[data["tra_infr"] == "Dedicated high speed railway lines"],
         on=["geo", "TIME_PERIOD"],
@@ -108,7 +107,6 @@ def transform_rail_high_speed(data: pd.DataFrame):
         suffixes=("", "_upgraded"),
     )
     hsp_data["OBS_VALUE_upgraded"] /= hsp_data["OBS_VALUE"]
-    print(hsp_data)
     return hsp_data.rename(
         {
             "OBS_VALUE_dedicated": "dedicated_high_speed_quota",
@@ -137,7 +135,7 @@ def download(force: bool = False):
 
 
 def load_data() -> pd.DataFrame:
-    data = None
+    data: pd.DataFrame | None = None
     data_dir = Path("data")
     for name in datasets:
         pq_t_file = data_dir / "transformed" / f"{name}.parquet"
@@ -177,24 +175,24 @@ def load_data() -> pd.DataFrame:
         raise Exception("No datasets to load")
     data["total_rail_length"] /= data["population"]
     data["rail_passengers"] /= data["population"] * 10_000
-    data = data[~data["TIME_PERIOD"].isin([2020, 2021, 2022])]
-    return (
-        data.rename({"TIME_PERIOD": "year"}, axis="columns")
+    data = (
+        data[~data["TIME_PERIOD"].isin([2020, 2021, 2022])]
+        .rename({"TIME_PERIOD": "year"}, axis="columns")
         .set_index(["geo", "year"])
         .dropna()
     )
+    scaler = StandardScaler().fit(data).set_output(transform="pandas")
+    return scaler.transform(data)
 
 
 @app.default
 def analyze():
     download()
     data = load_data()
-    for country_name, g in data.groupby("geo"):
-        print(f"Data for country: {country_name}")
-        print(g.describe([]))
-    print(data)
+    # for country_name, g in data.groupby("geo"):
+    #     print(f"Data for country: {country_name}")
+    #     print(g.describe([]))
     print("Proceeding with analysis")
-    print(data)
     print(data.corr())
     # Model 1: PooledOLS with rail_accidents as the sole predictor
     res1 = single_regressor_no_effects(data)

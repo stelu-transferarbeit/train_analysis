@@ -12,6 +12,22 @@ multi_regressor = [
 ]
 
 
+def _train(
+    data: pandas.DataFrame, predictors: list[str], effects: list[str] | None = None
+):
+    # for country, _g in data.reset_index().groupby("geo"):
+    #     print(f"Data for {country}")
+    #     print(
+    #         data.loc[
+    #             country,
+    #             ["rail_passengers", *predictors],
+    #         ]
+    #     )
+    if effects is None or len(effects) == 0:
+        return _pooled(data, predictors)
+    return _panel(data, predictors, effects)
+
+
 def _pooled(data: pandas.DataFrame, predictors: list[str]) -> PanelResults:
     return PooledOLS.from_formula(
         f"rail_passengers ~ 1 + {' + '.join(predictors)}",
@@ -29,16 +45,16 @@ def _panel(
 
 
 def single_regressor_no_effects(data: pandas.DataFrame) -> PanelResults:
-    return _pooled(data, single_regressor)
+    return _train(data, single_regressor)
 
 
 def single_regressor_entity_fixed_effects(data: pandas.DataFrame) -> PanelResults:
-    return _panel(data, single_regressor, ["EntityEffects"])
+    return _train(data, single_regressor, ["EntityEffects"])
 
 
 def single_regressor_entity_time_effects(data: pandas.DataFrame) -> PanelResults:
-    return _panel(data, single_regressor, ["EntityEffects", "TimeEffects"])
+    return _train(data, single_regressor, ["EntityEffects", "TimeEffects"])
 
 
 def multi_regressor_entity_time_effects(data: pandas.DataFrame) -> PanelResults:
-    return _panel(data, multi_regressor, ["EntityEffects", "TimeEffects"])
+    return _train(data, multi_regressor, ["EntityEffects", "TimeEffects"])
