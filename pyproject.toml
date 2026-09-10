@@ -10,6 +10,7 @@ authors = [
 ]
 dependencies = [
   "cyclopts>=4.22.5",
+  "geopandas>=1.1.4",
   "jupyter>=1.1.1",
   "jupyterlab>=4.5.8",
   "linearmodels>=7.0",

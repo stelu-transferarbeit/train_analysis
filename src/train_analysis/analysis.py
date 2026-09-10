@@ -1,6 +1,7 @@
 import pandas
-from linearmodels import PanelOLS, PooledOLS
+from linearmodels import PanelOLS, PooledOLS, RandomEffects
 from linearmodels.panel.results import PanelResults
+from statsmodels.api import add_constant
 
 single_regressor = ["cars_capita"]
 multi_regressor = [
@@ -24,28 +25,44 @@ def _train(
     #         ]
     #     )
     if effects is None or len(effects) == 0:
-        return _pooled(data, predictors)
-    return _panel(data, predictors, effects)
+        return pooled(data, predictors)
+    return panel(data, predictors, effects)
 
 
-def _pooled(data: pandas.DataFrame, predictors: list[str]) -> PanelResults:
-    return PooledOLS.from_formula(
-        f"rail_passengers ~ 1 + {' + '.join(predictors)}",
-        data=data,
-    ).fit(cov_type="clustered", cluster_entity=True)
+def pooled(data: pandas.DataFrame, predictors: list[str]) -> PanelResults:
+    predict_data = add_constant(data[predictors])
+    model = PooledOLS(data["rail_passengers"], predict_data).fit()
+    return model
 
 
-def _panel(
-    data: pandas.DataFrame, predictors: list[str], effects: list[str]
+def panel(
+    data: pandas.DataFrame,
+    predictors: list[str],
+    entity_effects: bool = False,
+    time_effects: bool = False,
 ) -> PanelResults:
-    return PanelOLS.from_formula(
-        f"rail_passengers ~ 1 + {' + '.join([*predictors, *effects])}",
-        data=data,
-    ).fit(cov_type="clustered", cluster_entity=True)
+    predict_data = add_constant(data[predictors])
+    model = PanelOLS(
+        data["rail_passengers"],
+        predict_data,
+        entity_effects=entity_effects,
+        time_effects=time_effects,
+    ).fit()
+    return model
+
+
+def random_effects(data: pandas.DataFrame, predictors: list[str]) -> PanelResults:
+    predict_data = add_constant(data[predictors])
+    model = RandomEffects(data["rail_passengers"], predict_data).fit()
+    return model
 
 
 def single_regressor_no_effects(data: pandas.DataFrame) -> PanelResults:
     return _train(data, single_regressor)
+
+
+def multiple_regressor_no_effects(data: pandas.DataFrame) -> PanelResults:
+    return _train(data, multi_regressor)
 
 
 def single_regressor_entity_fixed_effects(data: pandas.DataFrame) -> PanelResults:

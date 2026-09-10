@@ -1,14 +1,16 @@
 from pathlib import Path
 
+import geopandas
+import matplotlib.cm
+import matplotlib.pyplot as plt
 import pandas as pd
 from cyclopts import App
 from numpy import log
 
 from train_analysis.analysis import (
-    multi_regressor_entity_time_effects,
-    single_regressor_entity_fixed_effects,
-    single_regressor_entity_time_effects,
-    single_regressor_no_effects,
+    panel,
+    pooled,
+    random_effects,
 )
 
 app = App()
@@ -26,12 +28,12 @@ common_filters = f"{time_filter}&{country_filter}&{format_options}"
 datasets = {
     "rail_length": f"{eurostat_base}/rail_if_line_na/1.0/*.*.*.*.*?c[freq]=A&c[unit]=KM&c[tra_infr]=TOTAL,RL_ELC&c[tra_meas]=FR_ONL,TOTAL&{common_filters}",
     "cars_capita": f"{eurostat_base}/road_eqs_carhab/1.0/*.*.*?c[freq]=A&c[unit]=NR&{common_filters}",
-    "cars_10k": f"{eurostat_base}/road_eqs_carmot/1.0/*.*.*.*.*?c[freq]=A&c[unit]=NR&c[mot_nrg]=TOTAL&c[engine]=TOTAL&{common_filters}",
+    "cars": f"{eurostat_base}/road_eqs_carmot/1.0/*.*.*.*.*?c[freq]=A&c[unit]=NR&c[mot_nrg]=TOTAL&c[engine]=TOTAL&{common_filters}",
     "rail_passengers": f"{eurostat_base}/rail_pa_total/1.0/*.*.*?c[freq]=A&c[unit]=MIO_PKM&{common_filters}",
     "population": f"{eurostat_base}/demo_pjan/1.0/*.*.*.*.*?c[freq]=A&c[unit]=NR&c[age]=TOTAL&c[sex]=T&{common_filters}",
     "gdp_per_capita": f"{eurostat_base}/sdg_08_10/1.0/*.*.*.*?c[freq]=A&c[unit]=CLV20_EUR_HAB&c[na_item]=B1GQ&{common_filters}",
     "gdp": f"{eurostat_base}/nama_10_gdp/1.0/*.*.*.*?c[freq]=A&c[unit]=CP_MEUR&c[na_item]=B1GQ&{common_filters}",
-    "area": f"{eurostat_base}/reg_area3/1.0/*.*.*.*?c[freq]=A&c[landuse]=TOTAL&c[unit]=KM2&{country_filter}&c[TIME_PERIOD]=2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026&{format_options}",
+    "area": f"{eurostat_base}/reg_area3/1.0/*.*.*.*?c[freq]=A&c[landuse]=TOTAL&c[unit]=KM2&{country_filter}&c[TIME_PERIOD]=2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024&{format_options}",
     # "modal_split": f"{eurostat_base}/tran_hv_ms_psmod/1.0?c[vehicle]=TRN,CAR,BUS_TOT,AC&{common_filters}",
     # "rail_investment": "https://sdmx.oecd.org/public/rest/data/OECD.ITF,DSD_INFRINV@DF_INFRINV,1.0/.A..EUR.TOT_INL+MAR+AIR.Q",
     "rail_accidents": f"{eurostat_base}/tran_sf_railac/1.0/*.*.*.*?c[freq]=A&c[unit]=NR&c[accident]=TOTAL&{common_filters}",
@@ -53,7 +55,7 @@ def transform_area(data: pd.DataFrame):
     return pd.concat(countries)
 
 
-def transform_cars_10k(data: pd.DataFrame):
+def transform_cars(data: pd.DataFrame):
     return data.drop(["mot_nrg", "engine"], axis="columns")
 
 
@@ -199,9 +201,23 @@ def load_data() -> pd.DataFrame:
         .set_index(["geo", "year"])
     )
     data["population_log"] = log(data["population"])
+    # The rail accidents can be zero, so the log cannot be calculated. A
+    # workaround is to add 1 to ensure no 0 appears, but this will introduce a
+    # small bias. For simplicity's sake we ignore the issue.
+    #
+    # cfr: https://arxiv.org/abs/2203.11820
+
+    data["rail_accidents_log"] = log(data["rail_accidents"] + 1)
+    data["cars_log"] = log(data["cars"])
+    data["gdp_log"] = log(data["gdp"])
     data["railway_density"] = data["total_rail_length"] / data["area"]
     data.to_parquet(data_dir / "transformed" / "final.parquet")
     return data.dropna()
+
+
+def load_cached_data():
+    data_dir = Path("data")
+    return pd.read_parquet(data_dir / "transformed" / "final.parquet")
 
 
 @app.default
@@ -212,25 +228,142 @@ def analyze():
     #     print(f"Data for country: {country_name}")
     #     print(g.describe([]))
     print("Proceeding with analysis")
-    print(data.corr())
+    predictors = [
+        "population_log",
+        "rail_accidents_log",
+        "rail_electrification_share",
+        "cars_log",
+        "gdp_log",
+        "railway_density",
+    ]
+    variables = ["rail_passengers", *predictors]
+    print(data[variables].corr())
     print("Description")
-    print(data.describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]))
-    # Model 1: PooledOLS with rail_accidents as the sole predictor
-    res1 = single_regressor_no_effects(data)
-    print(res1)
-    print(res1.params)
-    # Model 2: PooledOLS with rail_accidents as the predictor and fixed entity effects
-    res2 = single_regressor_entity_fixed_effects(data)
-    print(res2)
-    print(res2.params)
-    # Model 3: Fixed effects with entity and time fixed effects
-    res3 = single_regressor_entity_time_effects(data)
-    print(res3)
-    print(res3.params)
-    # Model 4: Multiple regressors with fixed effects
-    res4 = multi_regressor_entity_time_effects(data)
-    print(res4)
-    print(res4.params)
+    print(data[variables].describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]))
+    print("=== BASE ===")
+    res = pooled(data, predictors)
+    print(res)
+    print("=== Random Effects ===")
+    res_random = random_effects(data, predictors)
+    print(res_random)
+    print("=== Entity Fixed Effects ===")
+    res_entity = panel(data, predictors, entity_effects=True)
+    print(res_entity)
+    print("=== Entity and Time-Fixed Effects ===")
+    res_entity_time = panel(data, predictors, entity_effects=True, time_effects=True)
+    print(res_entity_time)
+    # # Model 1: PooledOLS with rail_accidents as the sole predictor
+    # res1 = single_regressor_no_effects(data)
+    # print(res1)
+    # print(res1.params)
+    # # Model 2: PooledOLS with rail_accidents as the predictor and fixed entity effects
+    # res2 = single_regressor_entity_fixed_effects(data)
+    # print(res2)
+    # print(res2.params)
+    # # Model 3: Fixed effects with entity and time fixed effects
+    # res3 = single_regressor_entity_time_effects(data)
+    # print(res3)
+    # print(res3.params)
+    # # Model 4: Multiple regressors with fixed effects
+    # res4 = multi_regressor_entity_time_effects(data)
+    # print(res4)
+    # print(res4.params)
+
+
+country_codes = {
+    "Austria": "AT",
+    "Belgium": "BE",
+    "Bulgaria": "BG",
+    "Czechia": "CZ",
+    "Germany": "DE",
+    "Denmark": "DK",
+    "Estonia": "EE",
+    "Greece": "GR",
+    "Spain": "ES",
+    "Finland": "FI",
+    "France": "FR",
+    "Hungary": "HU",
+    "Ireland": "IE",
+    "Italy": "IT",
+    "Lithuania": "LT",
+    "Latvia": "LV",
+    "Netherlands": "NL",
+    "Norway": "NO",
+    "Poland": "PL",
+    "Portugal": "PT",
+    "Romania": "RO",
+    "Sweden": "SE",
+    "Slovenia": "SI",
+    "Slovakia": "SK",
+    "Switzerland": "CH",
+}
+
+
+@app.command()
+def plot():
+    geo_json_url = "https://raw.githubusercontent.com/leakyMirror/map-of-europe/refs/heads/master/GeoJSON/europe.geojson"
+    europe = geopandas.read_file(geo_json_url).to_crs("EPSG:3035")
+    countries_to_remove = ["RU", "TR", "GE", "AM", "AZ", "IL", "CY"]
+    europe = europe[~europe["ISO2"].isin(countries_to_remove)]
+
+    data = load_cached_data().reset_index()
+    data["country"] = data["geo"]
+    data = data.set_index("geo").rename(country_codes).reset_index()
+    data["rail_pop"] = data["rail_passengers"] / data["population"]
+    data["accidents_pkm"] = data["rail_accidents"] / data["rail_passengers"]
+    merged = europe.merge(data, left_on="ISO2", right_on="geo", how="left")
+    o_y = merged["year"]
+    merged["year"] = o_y.fillna(2024)
+    ax = merged[merged["year"] == 2024].plot(
+        column="rail_pop",
+        edgecolor="black",
+        cmap=matplotlib.cm.Greens,
+        missing_kwds={"color": "lightgrey"},
+    )
+    ax.axis("off")
+    ax.set_title("Passenger-km by population (2024)")
+    plt.show()
+    merged["year"] = o_y.fillna(2024)
+    ax = merged[merged["year"] == 2024].plot(
+        column="cars_capita",
+        edgecolor="black",
+        cmap=matplotlib.cm.Greens,
+        missing_kwds={"color": "lightgrey"},
+    )
+    ax.axis("off")
+    ax.set_title("Cars pro capita (2024)")
+    plt.show()
+    merged["year"] = o_y.fillna(2024)
+    ax = merged[merged["year"] == 2024].plot(
+        column="rail_electrification_share",
+        edgecolor="black",
+        cmap=matplotlib.cm.Greens,
+        missing_kwds={"color": "lightgrey"},
+        legend=True,
+    )
+    ax.set_title("Rail electrification share (2024)")
+    ax.axis("off")
+    plt.show()
+    merged["year"] = o_y.fillna(2024)
+    ax = merged[merged["year"] == 2024].plot(
+        column="accidents_pkm",
+        edgecolor="black",
+        cmap=matplotlib.cm.Reds,
+        missing_kwds={"color": "lightgrey"},
+    )
+    ax.set_title("Rail accidents by passenger-km (2024)")
+    ax.axis("off")
+    plt.show()
+    merged["year"] = o_y.fillna(2008)
+    ax = merged[merged["year"] == 2008].plot(
+        column="accidents_pkm",
+        edgecolor="black",
+        cmap=matplotlib.cm.Reds,
+        missing_kwds={"color": "lightgrey"},
+    )
+    ax.set_title("Rail accidents by passenger-km (2008)")
+    ax.axis("off")
+    plt.show()
 
 
 app()
