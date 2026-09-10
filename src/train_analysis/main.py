@@ -4,8 +4,9 @@ import geopandas
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn
 from cyclopts import App
-from numpy import log
+from numpy import log, ones_like, triu
 
 from train_analysis.analysis import (
     panel,
@@ -364,6 +365,38 @@ def plot():
     ax.set_title("Rail accidents by passenger-km (2008)")
     ax.axis("off")
     plt.show()
+
+
+@app.command
+def corr():
+    data = load_cached_data()
+    predictors = [
+        "population_log",
+        "rail_accidents_log",
+        "rail_electrification_share",
+        "cars_log",
+        "gdp_log",
+        "railway_density",
+    ]
+    variables = ["rail_passengers", *predictors]
+    corr = data[variables].corr()
+    mask = triu(ones_like(corr, dtype=bool))
+
+    seaborn.set_theme(style="white")
+    fig, ax = plt.subplots(figsize=(11, 9))
+    cmap = seaborn.diverging_palette(230, 20, as_cmap=True)
+    seaborn.heatmap(
+        corr,
+        mask=mask,
+        cmap=cmap,
+        center=0,
+        square=True,
+        linewidths=0.5,
+        cbar_kws={"shrink": 0.5},
+        annot=True,
+    )
+    plt.show()
+    fig.savefig("correlation_matrix.png")
 
 
 app()
