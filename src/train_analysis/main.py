@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 from cyclopts import App
-from sklearn.preprocessing import StandardScaler
+from numpy import log
 
 from train_analysis.analysis import (
     multi_regressor_entity_time_effects,
@@ -26,15 +26,35 @@ common_filters = f"{time_filter}&{country_filter}&{format_options}"
 datasets = {
     "rail_length": f"{eurostat_base}/rail_if_line_na/1.0/*.*.*.*.*?c[freq]=A&c[unit]=KM&c[tra_infr]=TOTAL,RL_ELC&c[tra_meas]=FR_ONL,TOTAL&{common_filters}",
     "cars_capita": f"{eurostat_base}/road_eqs_carhab/1.0/*.*.*?c[freq]=A&c[unit]=NR&{common_filters}",
+    "cars_10k": f"{eurostat_base}/road_eqs_carmot/1.0/*.*.*.*.*?c[freq]=A&c[unit]=NR&c[mot_nrg]=TOTAL&c[engine]=TOTAL&{common_filters}",
     "rail_passengers": f"{eurostat_base}/rail_pa_total/1.0/*.*.*?c[freq]=A&c[unit]=MIO_PKM&{common_filters}",
     "population": f"{eurostat_base}/demo_pjan/1.0/*.*.*.*.*?c[freq]=A&c[unit]=NR&c[age]=TOTAL&c[sex]=T&{common_filters}",
     "gdp_per_capita": f"{eurostat_base}/sdg_08_10/1.0/*.*.*.*?c[freq]=A&c[unit]=CLV20_EUR_HAB&c[na_item]=B1GQ&{common_filters}",
-    # "area": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0/data/dataflow/ESTAT/demo_r_d3area/1.0/*.*.*.*?c[freq]=A&c[unit]=KM2&c[landuse]=TOTAL&c[geo]=BE,BE1,BE10,BE100,BE2,BE21,BE211,BE212,BE213,BE22,BE221,BE222,BE223,BE23,BE231,BE232,BE233,BE234,BE235,BE236,BE24,BE241,BE242,BE25,BE251,BE252,BE253,BE254,BE255,BE256,BE257,BE258,BE3,BE31,BE310,BE32,BE321,BE322,BE323,BE324,BE325,BE326,BE327,BE33,BE331,BE332,BE334,BE335,BE336,BE34,BE341,BE342,BE343,BE344,BE345,BE35,BE351,BE352,BE353,BG,BG3,BG31,BG311,BG312,BG313,BG314,BG315,BG32,BG321,BG322,BG323,BG324,BG325,BG33,BG331,BG332,BG333,BG334,BG34,BG341,BG342,BG343,BG344,BG4,BG41,BG411,BG412,BG413,BG414,BG415,BG42,BG421,BG422,BG423,BG424,BG425,CZ,CZ0,CZ01,CZ010,CZ02,CZ020,CZ03,CZ031,CZ032,CZ04,CZ041,CZ042,CZ05,CZ051,CZ052,CZ053,CZ06,CZ063,CZ064,CZ07,CZ071,CZ072,CZ08,CZ080,DK,DK0,DK01,DK011,DK012,DK013,DK014,DK02,DK021,DK022,DK03,DK031,DK032,DK04,DK041,DK042,DK05,DK050,DE,IT,ITC,ITC1,ITC11,ITC12,ITC13,ITC14,ITC15,ITC16,ITC17,ITC18,ITC2,ITC20,ITC3,ITC31,ITC32,ITC33,ITC34,ITC4,ITF,ITG,ITH,ITI,FR,FR1,FR10,FR2,FR21,FR22,FR23,FR24,FR25,FR26,FR3,FR30,FR4,FR41,FR42,FR43,FR5,FR51,FR52,FR53,FR6,FR61,FR62,FR63,FR7,FR71,FR72,FR8,FR81,FR82,FR83,ES,ES1,ES11,ES12,ES13,ES2,ES21,ES22,ES23,ES24,ES3,ES30,ES4,ES41,ES42,ES43,ES5,ES51,ES52,ES53,ES6,ES61,ES62,ES63,ES64,ES7,ES70,NL,NL1,NL2,NL3,NL4,AT,AT1,AT2,AT3,PL,PL1,PL2,PL3,PL4,PL5,PL6,PT,PT1,PT15,PT16,PT17,PT18,PT2,PT20,PT3,PT30,RO,RO1,RO2,RO3,RO4,SE,SE1,SE2,SE3,FI,FI1,FI2,FI20,EE,IE,EL,HR,CY,LV,LT,LU,HU,MT,SI,SK,IS,LI,NO,CH,UK,ME,MK,AL,TR&c[TIME_PERIOD]=2015&compress=true&format=csvdata&formatVersion=1.0&lang=en&labels=label_only",
-    "modal_split": f"{eurostat_base}/tran_hv_ms_psmod/1.0?c[vehicle]=TRN,CAR,BUS_TOT,AC&{common_filters}",
+    "gdp": f"{eurostat_base}/nama_10_gdp/1.0/*.*.*.*?c[freq]=A&c[unit]=CP_MEUR&c[na_item]=B1GQ&{common_filters}",
+    "area": f"{eurostat_base}/reg_area3/1.0/*.*.*.*?c[freq]=A&c[landuse]=TOTAL&c[unit]=KM2&{country_filter}&c[TIME_PERIOD]=2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026&{format_options}",
+    # "modal_split": f"{eurostat_base}/tran_hv_ms_psmod/1.0?c[vehicle]=TRN,CAR,BUS_TOT,AC&{common_filters}",
     # "rail_investment": "https://sdmx.oecd.org/public/rest/data/OECD.ITF,DSD_INFRINV@DF_INFRINV,1.0/.A..EUR.TOT_INL+MAR+AIR.Q",
     "rail_accidents": f"{eurostat_base}/tran_sf_railac/1.0/*.*.*.*?c[freq]=A&c[unit]=NR&c[accident]=TOTAL&{common_filters}",
-    "rail_high_speed": f"{eurostat_base}/rail_if_line_sp/1.0/*.*.*.*?c[freq]=A&c[tra_infr]=TOTAL,RL_DHSPD,RL_UHSPD&c[unit]=KM&{common_filters}",
+    # "rail_high_speed": f"{eurostat_base}/rail_if_line_sp/1.0/*.*.*.*?c[freq]=A&c[tra_infr]=TOTAL,RL_DHSPD,RL_UHSPD&c[unit]=KM&{common_filters}",
 }
+
+
+def transform_area(data: pd.DataFrame):
+    countries = []
+    for country, group in data.groupby("geo"):
+        filled = pd.DataFrame({"TIME_PERIOD": list(range(2008, 2013))})
+        filled["geo"] = country
+        filled["OBS_VALUE"] = None
+        filled["OBS_VALUE"] = filled["OBS_VALUE"].astype("float64")
+        countries.append(
+            pd.concat([filled, group.drop("landuse", axis="columns")]).bfill()
+        )
+
+    return pd.concat(countries)
+
+
+def transform_cars_10k(data: pd.DataFrame):
+    return data.drop(["mot_nrg", "engine"], axis="columns")
 
 
 def transform_rail_length(data: pd.DataFrame):
@@ -59,7 +79,7 @@ def transform_rail_length(data: pd.DataFrame):
     return pass_data.rename(
         {
             "OBS_VALUE": "total_rail_length",
-            "OBS_VALUE_electrified": "rail_electrification_quota",
+            "OBS_VALUE_electrified": "rail_electrification_share",
         },
         axis="columns",
     ).loc[
@@ -109,8 +129,8 @@ def transform_rail_high_speed(data: pd.DataFrame):
     hsp_data["OBS_VALUE_upgraded"] /= hsp_data["OBS_VALUE"]
     return hsp_data.rename(
         {
-            "OBS_VALUE_dedicated": "dedicated_high_speed_quota",
-            "OBS_VALUE_upgraded": "upgraded_high_speed_quota",
+            "OBS_VALUE_dedicated": "dedicated_high_speed_share",
+            "OBS_VALUE_upgraded": "upgraded_high_speed_share",
         },
         axis="columns",
     ).loc[
@@ -173,16 +193,15 @@ def load_data() -> pd.DataFrame:
             data = data.merge(d, on=["geo", "TIME_PERIOD"])
     if data is None:
         raise Exception("No datasets to load")
-    data["total_rail_length"] /= data["population"]
-    data["rail_passengers"] /= data["population"] * 10_000
     data = (
         data[~data["TIME_PERIOD"].isin([2020, 2021, 2022])]
         .rename({"TIME_PERIOD": "year"}, axis="columns")
         .set_index(["geo", "year"])
-        .dropna()
     )
-    scaler = StandardScaler().fit(data).set_output(transform="pandas")
-    return scaler.transform(data)
+    data["population_log"] = log(data["population"])
+    data["railway_density"] = data["total_rail_length"] / data["area"]
+    data.to_parquet(data_dir / "transformed" / "final.parquet")
+    return data.dropna()
 
 
 @app.default
@@ -194,6 +213,8 @@ def analyze():
     #     print(g.describe([]))
     print("Proceeding with analysis")
     print(data.corr())
+    print("Description")
+    print(data.describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]))
     # Model 1: PooledOLS with rail_accidents as the sole predictor
     res1 = single_regressor_no_effects(data)
     print(res1)

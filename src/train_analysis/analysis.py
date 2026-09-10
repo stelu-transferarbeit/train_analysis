@@ -5,9 +5,9 @@ from linearmodels.panel.results import PanelResults
 single_regressor = ["cars_capita"]
 multi_regressor = [
     "rail_accidents",
-    "rail_electrification_quota",
-    "cars_capita",
-    "gdp_per_capita",
+    "rail_electrification_share",
+    "cars_10k",
+    "gdp",
     "total_rail_length",
 ]
 
