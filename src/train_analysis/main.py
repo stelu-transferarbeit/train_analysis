@@ -1,3 +1,6 @@
+import cyclopts.argument
+from typing import Annotated
+from yaml import Mark
 from pathlib import Path
 
 import geopandas
@@ -5,8 +8,10 @@ import matplotlib.cm
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn
-from cyclopts import App
+from cyclopts import App, Parameter
 from numpy import log, ones_like, triu
+from rich import print
+from rich.markdown import Markdown
 
 from train_analysis.analysis import (
     panel,
@@ -208,10 +213,16 @@ def load_data() -> pd.DataFrame:
     #
     # cfr: https://arxiv.org/abs/2203.11820
 
+    data["rail_passengers_pop"] = data["rail_passengers"] / data["population"]
+    data["rail_passengers_pop_log"] = log(data["rail_passengers_pop"])
     data["rail_accidents_log"] = log(data["rail_accidents"] + 1)
+    data["rail_accidents_div_pkm"] = data["rail_accidents"] / data["rail_passengers"]
+    data["rail_accidents_div_pkm_log"] = log(1 + data["rail_accidents_div_pkm"])
     data["cars_log"] = log(data["cars"])
     data["gdp_log"] = log(data["gdp"])
+    data["gdp_capita_log"] = log(data["gdp_per_capita"])
     data["railway_density"] = data["total_rail_length"] / data["area"]
+    data["railway_density_log"] = log(data["total_rail_length"] / data["area"])
     data.to_parquet(data_dir / "transformed" / "final.parquet")
     return data.dropna()
 
@@ -221,14 +232,21 @@ def load_cached_data():
     return pd.read_parquet(data_dir / "transformed" / "final.parquet")
 
 
+@app.command
 @app.default
-def analyze():
+def analyze(
+    lag: int = 0,
+    remove_outliers: Annotated[
+        bool, Parameter(name=["--remove_outliers", "-o"])
+    ] = False,
+):
     download()
-    data = load_data()
+    data = add_lag(load_data(), lag)
+    if remove_outliers:
+        data = remove_accidents_outliers(data)
     # for country_name, g in data.groupby("geo"):
     #     print(f"Data for country: {country_name}")
     #     print(g.describe([]))
-    print("Proceeding with analysis")
     predictors = [
         "population_log",
         "rail_accidents_log",
@@ -237,22 +255,53 @@ def analyze():
         "gdp_log",
         "railway_density",
     ]
+    predictors2 = [
+        "rail_accidents_div_pkm_log",
+        "rail_electrification_share",
+        "gdp_capita_log",
+        "railway_density_log",
+    ]
     variables = ["rail_passengers", *predictors]
     print(data[variables].corr())
-    print("Description")
+    _new_section("Variable descriptions")
     print(data[variables].describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]))
-    print("=== BASE ===")
-    res = pooled(data, predictors)
+    print(
+        data[
+            [
+                "rail_accidents",
+                "rail_accidents_log",
+                "rail_accidents_div_pkm",
+                "rail_accidents_div_pkm_log",
+            ]
+        ].describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
+    )
+    if lag == 0:
+        _new_section("Predictions without lag")
+    else:
+        _new_section(f"Predictions with {lag} years of lag")
+    _new_section("Simple PanelOLS model with all predictors")
+    res = pooled(data, "rail_passengers", predictors)
     print(res)
-    print("=== Random Effects ===")
-    res_random = random_effects(data, predictors)
-    print(res_random)
-    print("=== Entity Fixed Effects ===")
-    res_entity = panel(data, predictors, entity_effects=True)
+    _new_section("Simple PanelOLS model with rail passenger-km per population (ln)")
+    res = pooled(data, "rail_passengers_pop_log", predictors2)
+    print(res)
+    _new_section("Entity Fixed Effects")
+    res_entity = panel(
+        data, "rail_passengers_pop_log", predictors2, entity_effects=True
+    )
     print(res_entity)
-    print("=== Entity and Time-Fixed Effects ===")
-    res_entity_time = panel(data, predictors, entity_effects=True, time_effects=True)
+    _new_section("Entity and Time-Fixed Effects")
+    res_entity_time = panel(
+        data,
+        "rail_passengers_pop_log",
+        predictors2,
+        entity_effects=True,
+        time_effects=True,
+    )
     print(res_entity_time)
+    _new_section("Random Effects")
+    res_random = random_effects(data, "rail_passengers_pop_log", predictors2)
+    print(res_random)
     # # Model 1: PooledOLS with rail_accidents as the sole predictor
     # res1 = single_regressor_no_effects(data)
     # print(res1)
@@ -269,6 +318,34 @@ def analyze():
     # res4 = multi_regressor_entity_time_effects(data)
     # print(res4)
     # print(res4.params)
+
+
+def _new_section(title: str):
+    print("", "", "", sep="\n")
+    print(Markdown(f"# {title}\n---"))
+    print()
+
+
+def add_lag(data: pd.DataFrame, periods=-1):
+    possible_targets = [c for c in data.columns if c.startswith("rail_passengers")]
+    shifted = data.shift(periods=periods)
+    shifted.loc[:, possible_targets] = data.loc[:, possible_targets]
+    return shifted.dropna()
+
+
+def remove_accidents_outliers(data: pd.DataFrame):
+    accident_cols = [c for c in data.columns if c.startswith("rail_accidents")]
+    adjusted = data.copy()
+    for col in accident_cols:
+        adjusted.loc[
+            data[col] < data[col].quantile(0.05),
+            col,
+        ] = None
+        adjusted.loc[
+            data[col] > data[col].quantile(0.95),
+            col,
+        ] = None
+    return adjusted.dropna()
 
 
 country_codes = {

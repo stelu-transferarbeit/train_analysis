@@ -29,21 +29,22 @@ def _train(
     return panel(data, predictors, effects)
 
 
-def pooled(data: pandas.DataFrame, predictors: list[str]) -> PanelResults:
+def pooled(data: pandas.DataFrame, target: str, predictors: list[str]) -> PanelResults:
     predict_data = add_constant(data[predictors])
-    model = PooledOLS(data["rail_passengers"], predict_data).fit()
+    model = PooledOLS(data[target], predict_data).fit()
     return model
 
 
 def panel(
     data: pandas.DataFrame,
+    target: str,
     predictors: list[str],
     entity_effects: bool = False,
     time_effects: bool = False,
 ) -> PanelResults:
     predict_data = add_constant(data[predictors])
     model = PanelOLS(
-        data["rail_passengers"],
+        data[target],
         predict_data,
         entity_effects=entity_effects,
         time_effects=time_effects,
@@ -51,9 +52,11 @@ def panel(
     return model
 
 
-def random_effects(data: pandas.DataFrame, predictors: list[str]) -> PanelResults:
+def random_effects(
+    data: pandas.DataFrame, target: str, predictors: list[str]
+) -> PanelResults:
     predict_data = add_constant(data[predictors])
-    model = RandomEffects(data["rail_passengers"], predict_data).fit()
+    model = RandomEffects(data[target], predict_data).fit()
     return model
 
 
