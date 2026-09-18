@@ -1,7 +1,5 @@
-import cyclopts.argument
-from typing import Annotated
-from yaml import Mark
 from pathlib import Path
+from typing import Annotated
 
 import geopandas
 import matplotlib.cm
@@ -12,6 +10,7 @@ from cyclopts import App, Parameter
 from numpy import log, ones_like, triu
 from rich import print
 from rich.markdown import Markdown
+from statsmodels.iolib.summary import SimpleTable
 
 from train_analysis.analysis import (
     panel,
@@ -218,6 +217,8 @@ def load_data() -> pd.DataFrame:
     data["rail_accidents_log"] = log(data["rail_accidents"] + 1)
     data["rail_accidents_div_pkm"] = data["rail_accidents"] / data["rail_passengers"]
     data["rail_accidents_div_pkm_log"] = log(1 + data["rail_accidents_div_pkm"])
+    data["cars_capita"] = data["cars"] / data["population"]
+    data["cars_capita_log"] = log(data["cars_capita"])
     data["cars_log"] = log(data["cars"])
     data["gdp_log"] = log(data["gdp"])
     data["gdp_capita_log"] = log(data["gdp_per_capita"])
@@ -248,32 +249,20 @@ def analyze(
     #     print(f"Data for country: {country_name}")
     #     print(g.describe([]))
     predictors = [
-        "population_log",
-        "rail_accidents_log",
-        "rail_electrification_share",
-        "cars_log",
-        "gdp_log",
-        "railway_density",
-    ]
-    predictors2 = [
         "rail_accidents_div_pkm_log",
         "rail_electrification_share",
+        "cars_capita_log",
         "gdp_capita_log",
         "railway_density_log",
     ]
     variables = ["rail_passengers", *predictors]
     print(data[variables].corr())
+    print(data[predictors].corr())
     _new_section("Variable descriptions")
-    print(data[variables].describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]))
     print(
-        data[
-            [
-                "rail_accidents",
-                "rail_accidents_log",
-                "rail_accidents_div_pkm",
-                "rail_accidents_div_pkm_log",
-            ]
-        ].describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
+        data[["rail_passengers_pop_log", *predictors]]
+        .describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
+        .to_latex()
     )
     if lag == 0:
         _new_section("Predictions without lag")
@@ -283,25 +272,25 @@ def analyze(
     res = pooled(data, "rail_passengers", predictors)
     print(res)
     _new_section("Simple PanelOLS model with rail passenger-km per population (ln)")
-    res = pooled(data, "rail_passengers_pop_log", predictors2)
+    res = pooled(data, "rail_passengers_pop_log", predictors)
     print(res)
     _new_section("Entity Fixed Effects")
-    res_entity = panel(
-        data, "rail_passengers_pop_log", predictors2, entity_effects=True
-    )
+    res_entity = panel(data, "rail_passengers_pop_log", predictors, entity_effects=True)
     print(res_entity)
     _new_section("Entity and Time-Fixed Effects")
     res_entity_time = panel(
         data,
         "rail_passengers_pop_log",
-        predictors2,
+        predictors,
         entity_effects=True,
         time_effects=True,
     )
     print(res_entity_time)
     _new_section("Random Effects")
-    res_random = random_effects(data, "rail_passengers_pop_log", predictors2)
+    res_random = random_effects(data, "rail_passengers_pop_log", predictors)
     print(res_random)
+    print(res_random.summary.as_latex())
+
     # # Model 1: PooledOLS with rail_accidents as the sole predictor
     # res1 = single_regressor_no_effects(data)
     # print(res1)
@@ -448,19 +437,18 @@ def plot():
 def corr():
     data = load_cached_data()
     predictors = [
-        "population_log",
-        "rail_accidents_log",
+        "rail_accidents_div_pkm_log",
         "rail_electrification_share",
-        "cars_log",
-        "gdp_log",
-        "railway_density",
+        "cars_capita_log",
+        "gdp_capita_log",
+        "railway_density_log",
     ]
-    variables = ["rail_passengers", *predictors]
-    corr = data[variables].corr()
+    variables = ["rail_passengers_pop_log", *predictors]
+    corr = data[variables].corr("kendall")
     mask = triu(ones_like(corr, dtype=bool))
 
     seaborn.set_theme(style="white")
-    fig, ax = plt.subplots(figsize=(11, 9))
+    fig, ax = plt.subplots(figsize=(20, 15))
     cmap = seaborn.diverging_palette(230, 20, as_cmap=True)
     seaborn.heatmap(
         corr,
@@ -471,9 +459,11 @@ def corr():
         linewidths=0.5,
         cbar_kws={"shrink": 0.5},
         annot=True,
+        ax=ax,
     )
+    ax.margins(x=0.5, y=0.5)
     plt.show()
-    fig.savefig("correlation_matrix.png")
+    fig.savefig("correlation_matrix.png", bbox_inches="tight")
 
 
 app()
