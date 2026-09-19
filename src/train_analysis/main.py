@@ -260,9 +260,9 @@ def analyze(
     print(data[predictors].corr())
     _new_section("Variable descriptions")
     print(
-        data[["rail_passengers_pop_log", *predictors]]
-        .describe([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
-        .to_latex()
+        data[["rail_passengers_pop_log", *predictors]].describe(
+            [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
+        )
     )
     if lag == 0:
         _new_section("Predictions without lag")
@@ -289,7 +289,6 @@ def analyze(
     _new_section("Random Effects")
     res_random = random_effects(data, "rail_passengers_pop_log", predictors)
     print(res_random)
-    print(res_random.summary.as_latex())
 
     # # Model 1: PooledOLS with rail_accidents as the sole predictor
     # res1 = single_regressor_no_effects(data)
